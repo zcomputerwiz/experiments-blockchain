@@ -2,7 +2,6 @@ import pytest
 import tempfile
 from pathlib import Path
 
-
 # TODO: tests.setup_nodes (which is also imported by tests.util.blockchain) creates a
 #       global BlockTools at tests.setup_nodes.bt.  This results in an attempt to create
 #       the chia root directory which the build scripts symlink to a sometimes-not-there
@@ -98,3 +97,12 @@ async def default_10000_blocks_compact():
 async def tmp_dir():
     with tempfile.TemporaryDirectory() as folder:
         yield Path(folder)
+
+
+@pytest.fixture(scope="function")
+async def farmer_multi_harvester(request, tmp_path):
+    from tests.setup_nodes import setup_farmer_multi_harvester, test_constants
+
+    marker = request.node.get_closest_marker("harvesters")
+    async for _ in setup_farmer_multi_harvester(marker.kwargs["count"], tmp_path, test_constants):
+        yield _

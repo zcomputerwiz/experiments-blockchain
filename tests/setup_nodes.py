@@ -3,6 +3,7 @@ import atexit
 import signal
 import sqlite3
 
+from pathlib import Path
 from secrets import token_bytes
 from typing import Dict, List, Optional
 
@@ -18,8 +19,9 @@ from chia.server.start_timelord import service_kwargs_for_timelord
 from chia.server.start_wallet import service_kwargs_for_wallet
 from chia.simulator.start_simulator import service_kwargs_for_full_node_simulator
 from chia.timelord.timelord_launcher import kill_processes, spawn_process
-from chia.types.peer_info import PeerInfo
+from chia.cmds.init_funcs import init
 from chia.util.bech32m import encode_puzzle_hash
+from chia.util.config import load_config, save_config
 from tests.block_tools import create_block_tools, create_block_tools_async, test_constants
 from tests.util.keyring import TempKeyring
 from chia.util.hash import std_hash
@@ -199,13 +201,16 @@ async def setup_wallet_node(
 
 
 async def setup_harvester(
-    port, farmer_port, consensus_constants: ConsensusConstants, b_tools, start_service: bool = True
+    root_path, port, rpc_port, farmer_port, consensus_constants: ConsensusConstants, start_service: bool = True
 ):
-    kwargs = service_kwargs_for_harvester(b_tools.root_path, b_tools.config["harvester"], consensus_constants)
+    config = load_config(root_path, "config.yaml")
+    config["harvester"]["port"] = port
+    config["harvester"]["rpc_port"] = rpc_port
+    config["harvester"]["farmer_peer"]["host"] = self_hostname
+    config["harvester"]["farmer_peer"]["port"] = farmer_port
+    save_config(root_path, "config.yaml", config)
+    kwargs = service_kwargs_for_harvester(root_path, config["harvester"], consensus_constants)
     kwargs.update(
-        server_listen_ports=[port],
-        advertised_port=port,
-        connect_peers=[PeerInfo(self_hostname, farmer_port)],
         parse_cli_args=False,
         connect_to_daemon=False,
     )
@@ -484,7 +489,7 @@ async def setup_simulators_and_wallets(
 
 async def setup_farmer_harvester(consensus_constants: ConsensusConstants, start_services: bool = True):
     node_iters = [
-        setup_harvester(21234, 21235, consensus_constants, bt, start_services),
+        setup_harvester(bt.root_path, 21234, 31234, 21235, consensus_constants, start_services),
         setup_farmer(21235, consensus_constants, bt, start_service=start_services),
     ]
 
@@ -494,6 +499,38 @@ async def setup_farmer_harvester(consensus_constants: ConsensusConstants, start_
     yield harvester_service, farmer_service
 
     await _teardown_nodes(node_iters)
+
+
+async def setup_farmer_multi_harvester(harvester_count: int, temp_dir: Path, consensus_constants: ConsensusConstants):
+    node_iterators = [setup_farmer(10003, consensus_constants, bt)]
+
+    for i in range(0, harvester_count):
+        root_path: Path = temp_dir / str(i)
+        init(None, root_path)
+        init(bt.root_path / "config" / "ssl" / "ca", root_path)
+        config = load_config(root_path, "config.yaml")
+        config["logging"]["log_stdout"] = True
+        config["selected_network"] = "testnet0"
+        config["harvester"]["selected_network"] = "testnet0"
+        save_config(root_path, "config.yaml", config)
+        node_iterators.append(setup_harvester(root_path, 10000 + i, 20000 + i, 10003, consensus_constants, False))
+
+    farmer_service = await node_iterators[0].__anext__()
+    harvester_services = []
+    for node in node_iterators[1:]:
+        harvester_service = await node.__anext__()
+        harvester_services.append(harvester_service)
+
+    yield harvester_services, farmer_service
+
+    for harvester_service in harvester_services:
+        harvester_service.stop()
+        await harvester_service.wait_closed()
+
+    farmer_service.stop()
+    await farmer_service.wait_closed()
+
+    await _teardown_nodes(node_iterators)
 
 
 async def setup_full_system(
@@ -506,7 +543,7 @@ async def setup_full_system(
             b_tools_1 = await create_block_tools_async(constants=test_constants, keychain=keychain2)
         node_iters = [
             setup_introducer(21233),
-            setup_harvester(21234, 21235, consensus_constants, b_tools),
+            setup_harvester(b_tools.root_path, 21234, 31234, 21235, consensus_constants),
             setup_farmer(21235, consensus_constants, b_tools, uint16(21237)),
             setup_vdf_clients(8000),
             setup_timelord(21236, 21237, False, consensus_constants, b_tools),
