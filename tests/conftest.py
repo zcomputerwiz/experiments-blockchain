@@ -1,6 +1,11 @@
+import multiprocessing
 import pytest
 import tempfile
 from pathlib import Path
+
+# Temporary workaround for blocked sockets on service restart
+# See https://github.com/pythonprofilers/memory_profiler/issues/342
+multiprocessing.set_start_method("spawn")
 
 # TODO: tests.setup_nodes (which is also imported by tests.util.blockchain) creates a
 #       global BlockTools at tests.setup_nodes.bt.  This results in an attempt to create
