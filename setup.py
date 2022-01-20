@@ -45,6 +45,7 @@ dev_dependencies = [
     "pytest-asyncio",
     "pytest-monitor; sys_platform == 'linux'",
     "pytest-xdist",
+    "isort",
     "flake8",
     "mypy",
     "black",
