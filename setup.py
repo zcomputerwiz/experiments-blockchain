@@ -1,3 +1,4 @@
+# note
 from setuptools import setup
 
 dependencies = [
