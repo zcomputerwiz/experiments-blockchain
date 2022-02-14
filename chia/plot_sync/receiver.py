@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Collection, Dict, List, Optional
 
 from chia.plot_sync.delta import Delta, PathListDelta, PlotListDelta
 from chia.plot_sync.exceptions import (
@@ -173,7 +173,7 @@ class Receiver:
         self,
         state: State,
         next_state: State,
-        target: Any,
+        target: Collection[str],
         delta: List[str],
         paths: PlotSyncPathList,
         is_removal: bool = False,
