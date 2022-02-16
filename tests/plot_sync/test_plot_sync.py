@@ -194,6 +194,9 @@ class Environment:
         expected.invalid_delta.clear()
         expected.keys_missing_delta.clear()
         expected.duplicates_delta.clear()
+
+        # This must be last.  Failed assertions above only result in test failures by keeping
+        # this line from running.
         expected.callback_passed = True
 
     async def run_sync_test(self) -> None:
