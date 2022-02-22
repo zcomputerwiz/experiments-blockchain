@@ -49,12 +49,20 @@ class WalletWeightProofHandler:
         self._weight_proof_tasks: List[asyncio.Task] = []
 
     def cancel_weight_proof_tasks(self):
-        for task in self._weight_proof_tasks:
-            if not task.done():
-                task.cancel()
-        self._weight_proof_tasks = []
-        self._executor_shutdown_tempfile.close()
-        self._executor.shutdown(wait=True)
+        log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() entered")
+        try:
+            for task in self._weight_proof_tasks:
+                if not task.done():
+                    task.cancel()
+            log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() tasks cancelled")
+            self._weight_proof_tasks = []
+            log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() closing file")
+            self._executor_shutdown_tempfile.close()
+            log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() waiting for shutdown")
+            self._executor.shutdown(wait=True)
+            log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() completed")
+        finally:
+            log.info(f" ==== WalletWeightProofHandler.cancel_weight_proof_tasks() leaving")
 
     async def validate_weight_proof(
         self, weight_proof: WeightProof, skip_segment_validation=False

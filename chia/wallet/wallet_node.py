@@ -263,17 +263,24 @@ class WalletNode:
             self._secondary_peer_sync_task.cancel()
 
     async def _await_closed(self):
-        self.log.info("self._await_closed")
+        try:
+            self.log.info("self._await_closed")
 
-        if self.server is not None:
-            await self.server.close_all_connections()
-        if self.wallet_peers is not None:
-            await self.wallet_peers.ensure_is_closed()
-        if self.wallet_state_manager is not None:
-            await self.wallet_state_manager._await_closed()
-            self.wallet_state_manager = None
-        self.logged_in = False
-        self.wallet_peers = None
+            if self.server is not None:
+                self.log.info(f" ==== WalletNode._await_closed() closing server connections")
+                await self.server.close_all_connections()
+            if self.wallet_peers is not None:
+                self.log.info(f" ==== WalletNode._await_closed() closing peers")
+                await self.wallet_peers.ensure_is_closed()
+            if self.wallet_state_manager is not None:
+                self.log.info(f" ==== WalletNode._await_closed() closing wallet state manager")
+                await self.wallet_state_manager._await_closed()
+                self.wallet_state_manager = None
+            self.logged_in = False
+            self.wallet_peers = None
+            self.log.info(f" ==== WalletNode._await_closed() completed")
+        finally:
+            self.log.info(f" ==== WalletNode._await_closed() leaving")
 
     def _set_state_changed_callback(self, callback: Callable):
         self.state_changed_callback = callback
