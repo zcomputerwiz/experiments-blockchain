@@ -166,6 +166,7 @@ class Crawler:
             self._state_changed("loaded_initial_peers")
 
             while True:
+                self.log.error("Starting crawler cycle")
                 self.with_peak = set()
                 peers_to_crawl = await self.crawl_store.get_peers_to_crawl(25000, 250000)
                 tasks = set()
@@ -248,6 +249,7 @@ class Crawler:
 
                 self.server.banned_peers = {}
                 if len(peers_to_crawl) == 0:
+                    self.log.error("No peers to crawl")
                     continue
 
                 # Try up to 5 times to write to the DB in case there is a lock that causes a timeout
@@ -320,6 +322,7 @@ class Crawler:
                 self.log.error("***")
 
                 self._state_changed("crawl_batch_completed")
+                self.log.error("finished crawler cycle")
         except Exception as e:
             self.log.error(f"Exception: {e}. Traceback: {traceback.format_exc()}.")
 
