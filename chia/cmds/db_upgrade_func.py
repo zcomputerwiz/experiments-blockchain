@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 from pathlib import Path
+import shutil
 import sys
 from time import time
 
@@ -18,7 +19,7 @@ def db_upgrade_func(
     in_db_path: Optional[Path] = None,
     out_db_path: Optional[Path] = None,
     no_update_config: bool = False,
-):
+) -> None:
 
     update_config: bool = in_db_path is None and out_db_path is None and not no_update_config
 
@@ -40,15 +41,38 @@ def db_upgrade_func(
         out_db_path = path_from_root(root_path, db_path_replaced)
         mkdir(out_db_path.parent)
 
-    convert_v1_to_v2(in_db_path, out_db_path)
+    total, used, free = shutil.disk_usage(out_db_path)
+    in_db_size = in_db_path.stat().st_size
+    if free < in_db_size:
+        print("there is not enough free space on the volume where the output database will be written:")
+        print(f"   {out_db_path}")
+        print(
+            f"free space: {free / 1024 / 1024 / 1024:0.2} GiB expected at least "
+            f"{in_db_size / 1024 / 1024 / 1024:0.2} GiB"
+        )
+        return
 
-    if update_config:
-        print("updating config.yaml")
-        config = load_config(root_path, "config.yaml")
-        new_db_path = db_pattern.replace("_v1_", "_v2_")
-        config["full_node"]["database_path"] = new_db_path
-        print(f"database_path: {new_db_path}")
-        save_config(root_path, "config.yaml", config)
+    try:
+        convert_v1_to_v2(in_db_path, out_db_path)
+
+        if update_config:
+            print("updating config.yaml")
+            config = load_config(root_path, "config.yaml")
+            new_db_path = db_pattern.replace("_v1_", "_v2_")
+            config["full_node"]["database_path"] = new_db_path
+            print(f"database_path: {new_db_path}")
+            save_config(root_path, "config.yaml", config)
+
+    except RuntimeError as e:
+        print(f"conversion failed with error: {e}.")
+    except Exception as e:
+        print(f"conversion failed with error: {e}.")
+        print("The target v2 database is left in place (possibly in an incomplete state)")
+        print(f"  {out_db_path}")
+        print("If the failure is caused by ia full disk, ensure the volumes your ")
+        print("of temporary directory and the destination database directory ")
+        print("has sufficient free space.")
+        print("alternatively specify the SQLITE_TMPDIR and re-run")
 
     print(f"\n\nLEAVING PREVIOUS DB FILE UNTOUCHED {in_db_path}\n")
 
@@ -66,16 +90,13 @@ def convert_v1_to_v2(in_path: Path, out_path: Path) -> None:
     from contextlib import closing
 
     if not in_path.exists():
-        print(f"input file doesn't exist. {in_path}")
-        raise RuntimeError(f"can't find {in_path}")
+        raise RuntimeError(f"input file doesn't exist. {in_path}")
 
     if in_path == out_path:
-        print(f"output file is the same as the input {in_path}")
-        raise RuntimeError("invalid conversion files")
+        raise RuntimeError(f"output file is the same as the input {in_path}")
 
     if out_path.exists():
-        print(f"output file already exists. {out_path}")
-        raise RuntimeError("already exists")
+        raise RuntimeError(f"output file already exists. {out_path}")
 
     print(f"opening file for reading: {in_path}")
     with closing(sqlite3.connect(in_path)) as in_db:
@@ -83,8 +104,7 @@ def convert_v1_to_v2(in_path: Path, out_path: Path) -> None:
             with closing(in_db.execute("SELECT * from database_version")) as cursor:
                 row = cursor.fetchone()
                 if row is not None and row[0] != 1:
-                    print(f"blockchain database already version {row[0]}\nDone")
-                    raise RuntimeError("already v2")
+                    raise RuntimeError(f"blockchain database already version {row[0]}. Won't convert")
         except sqlite3.OperationalError:
             pass
 
@@ -119,8 +139,7 @@ def convert_v1_to_v2(in_path: Path, out_path: Path) -> None:
             with closing(in_db.execute("SELECT header_hash, height from block_records WHERE is_peak = 1")) as cursor:
                 peak_row = cursor.fetchone()
                 if peak_row is None:
-                    print("v1 database does not have a peak block, there is no blockchain to convert")
-                    raise RuntimeError("no blockchain")
+                    raise RuntimeError("v1 database does not have a peak block, there is no blockchain to convert")
             peak_hash = bytes32(bytes.fromhex(peak_row[0]))
             peak_height = uint32(peak_row[1])
             print(f"peak: {peak_hash.hex()} height: {peak_height}")
@@ -160,7 +179,6 @@ def convert_v1_to_v2(in_path: Path, out_path: Path) -> None:
                         while True:
                             row_2 = cursor_2.fetchone()
                             if row_2 is None:
-                                print(f"ERROR: could not find block {hh.hex()}")
                                 raise RuntimeError(f"block {hh.hex()} not found")
                             if bytes.fromhex(row_2[0]) == hh:
                                 break
