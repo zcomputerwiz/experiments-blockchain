@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import aiosqlite
+import sqlite3
 from blspy import AugSchemeMPL
 
 import chia.server.ws_connection as ws  # lgtm [py/import-and-import-from]
@@ -157,6 +158,20 @@ class FullNode:
         self.respond_transaction_semaphore = asyncio.Semaphore(200)
         # create the store (db) and full node instance
         self.connection = await aiosqlite.connect(self.db_path)
+        async with self.connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='full_blocks'"
+        ) as conn:
+            if len(await conn.fetchall()) == 0:
+                # this is a new DB file. Make it v2
+                try:
+                    await self.connection.execute("CREATE TABLE database_version(version int)")
+                    await self.connection.execute("INSERT INTO database_version VALUES (2)")
+                    await self.connection.commit()
+                except sqlite3.OperationalError:
+                    # it could be a database created with "chia init", which is
+                    # empty except it has the database_version table
+                    pass
+
         await self.connection.execute("pragma journal_mode=wal")
 
         db_sync = db_synchronous_on(self.config.get("db_sync", "auto"), self.db_path)
